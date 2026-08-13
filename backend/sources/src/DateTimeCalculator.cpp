@@ -136,12 +136,14 @@ time_t DateTimeCalculator::calculateNextMonth(const EventEntry& event, time_t cu
         int desired_year, desired_mon;
         add_months_to_ym(base.tm_year, base.tm_mon, months_accumulated, desired_year, desired_mon);
 
-        // build tm for desired month/day
+        // build tm for desired month/day, preserve original hour/min/sec
         struct tm tm_event{};
         tm_event.tm_year = desired_year;
         tm_event.tm_mon = desired_mon;
         tm_event.tm_mday = target_day;
-        tm_event.tm_hour = 12; // avoid DST edge cases
+        tm_event.tm_hour = base.tm_hour; // preserve original hour
+        tm_event.tm_min = base.tm_min;
+        tm_event.tm_sec = base.tm_sec;
         tm_event.tm_isdst = -1;
 
         time_t cand = safe_mktime(tm_event);
@@ -239,7 +241,7 @@ time_t DateTimeCalculator::calculateStepBack(const EventEntry& event, time_t fut
             int last = last_day_of_month_by_ym(desired_year, desired_mon);
             struct tm adj = desired;
             adj.tm_mday = last;
-            adj.tm_hour = 12;
+            adj.tm_hour = desired.tm_hour; // preserve original hour
             adj.tm_isdst = -1;
             time_t cand = safe_mktime(adj);
             if (cand != (time_t)-1) result = cand;
