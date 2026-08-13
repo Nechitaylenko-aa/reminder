@@ -7,6 +7,9 @@
 
 std::vector<EventEntry>  entriesToUpdate;
 
+// Default hour (local time) at which a DATE-only event is considered triggered
+static constexpr int DEFAULT_DATE_TRIGGER_HOUR = 8;
+
 CTestEventsTimer::CTestEventsTimer(CQueue *queue, uint32_t period_ms) : CTimer(queue, period_ms)
 {}
 
@@ -40,16 +43,41 @@ void CTestEventsTimer::onTick()
 
         time_t futureTime = DateTimeCalculator::calculateNext(item, cTime);
         time_t lastActual = DateTimeCalculator::calculateStepBack(item, futureTime);
+
+        // default real trigger time is the computed lastActual adjusted by trigger
         time_t realTriggerTime = DateTimeCalculator::applyTrigger(lastActual, item.trigger);
 
-        bool datesEqual = false;
+        bool dateReached = false;
+
         if (item.type == EventType::ET_DATE)
         {
-            // check if event was or active
-            datesEqual = isDateLessEqual(lastActual, cTime);
+            // Build local tm for event date and set trigger hour (local)
+            struct tm ev_tm = DateTimeCalculator::safeLocaltime(item.event);
+
+            // Preserve date, set time to business trigger hour (DEFAULT_DATE_TRIGGER_HOUR:08:00)
+            ev_tm.tm_hour = DEFAULT_DATE_TRIGGER_HOUR;
+            ev_tm.tm_min = 0;
+            ev_tm.tm_sec = 0;
+            ev_tm.tm_isdst = -1; // let mktime decide DST rules for that local time
+
+            time_t date_trigger = mktime(&ev_tm);
+
+            // apply weekend/ET_BEFORE/ET_AFTER adjustments on that date-local time
+            date_trigger = DateTimeCalculator::applyTrigger(date_trigger, item.trigger);
+
+            realTriggerTime = date_trigger;
+
+            // calendar-based check (year/month/day) as additional safety
+            struct tm ev = DateTimeCalculator::safeLocaltime(item.event);
+            struct tm now = DateTimeCalculator::safeLocaltime(cTime);
+            if (now.tm_year > ev.tm_year ||
+                (now.tm_year == ev.tm_year && now.tm_mon > ev.tm_mon) ||
+                (now.tm_year == ev.tm_year && now.tm_mon == ev.tm_mon && now.tm_mday >= ev.tm_mday)) {
+                dateReached = true;
+            }
         }
 
-        if ((realTriggerTime <= cTime || datesEqual) && realTriggerTime > item.was_shown)
+        if ((realTriggerTime <= cTime || dateReached) && realTriggerTime > item.was_shown)
         {
             item.was_shown = realTriggerTime;
             entriesToUpdate.push_back(item);
