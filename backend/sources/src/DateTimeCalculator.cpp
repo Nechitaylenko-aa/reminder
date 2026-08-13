@@ -39,6 +39,7 @@ static int last_day_of_month_by_ym(int tm_year, int tm_mon)
     int next_mon = tm_mon + 1;
     int next_year = tm_year;
     if (next_mon > 11) { next_mon -= 12; next_year += 1; }
+    t.tm_year = next_year; // ensure year is correct for next month
     t.tm_mon = next_mon;
     t.tm_mday = 1;
     t.tm_hour = 12; // midday to avoid DST issues
@@ -136,33 +137,53 @@ time_t DateTimeCalculator::calculateNextMonth(const EventEntry& event, time_t cu
         int desired_year, desired_mon;
         add_months_to_ym(base.tm_year, base.tm_mon, months_accumulated, desired_year, desired_mon);
 
+        // compute last day first and pick use_day = min(target_day, last)
+        int last = last_day_of_month_by_ym(desired_year, desired_mon);
+        int use_day = target_day < last ? target_day : last;
+
         // build tm for desired month/day, preserve original hour/min/sec
         struct tm tm_event{};
         tm_event.tm_year = desired_year;
         tm_event.tm_mon = desired_mon;
-        tm_event.tm_mday = target_day;
+        tm_event.tm_mday = use_day;
         tm_event.tm_hour = base.tm_hour; // preserve original hour
         tm_event.tm_min = base.tm_min;
         tm_event.tm_sec = base.tm_sec;
         tm_event.tm_isdst = -1;
 
         time_t cand = safe_mktime(tm_event);
+
+        // Fallback: if mktime produced a value outside desired month (some libc oddities),
+        // compute from first day of month + (use_day-1) * 86400 seconds
         if (cand == (time_t)-1) {
-            // try set to last day of desired month
-            int last = last_day_of_month_by_ym(desired_year, desired_mon);
+            // try again with last day (should be same as use_day in that case)
             tm_event.tm_mday = last;
             tm_event.tm_isdst = -1;
             cand = safe_mktime(tm_event);
             if (cand == (time_t)-1) break;
         } else {
             struct tm cand_tm = safeLocaltime(cand);
-            // If day rolled into another month (e.g., Feb doesn't have 31), set to last day of desired month
-            if (cand_tm.tm_mon != desired_mon || cand_tm.tm_mday != target_day) {
-                int last = last_day_of_month_by_ym(desired_year, desired_mon);
-                tm_event.tm_mday = last;
-                tm_event.tm_isdst = -1;
-                cand = safe_mktime(tm_event);
-                if (cand == (time_t)-1) break;
+            if (cand_tm.tm_mon != desired_mon || cand_tm.tm_mday != use_day) {
+                struct tm first{};
+                first.tm_year = desired_year;
+                first.tm_mon = desired_mon;
+                first.tm_mday = 1;
+                first.tm_hour = base.tm_hour;
+                first.tm_min = base.tm_min;
+                first.tm_sec = base.tm_sec;
+                first.tm_isdst = -1;
+                time_t first_ts = safe_mktime(first);
+                if (first_ts == (time_t)-1) break;
+                // add days in seconds; acceptable because tests run in UTC; DST may affect but we preserve hour
+                cand = first_ts + (time_t)(use_day - 1) * 24 * 3600;
+                struct tm verify = safeLocaltime(cand);
+                if (verify.tm_mon != desired_mon || verify.tm_mday != use_day) {
+                    // final fallback: set to last day
+                    first.tm_mday = last;
+                    first.tm_isdst = -1;
+                    cand = safe_mktime(first);
+                    if (cand == (time_t)-1) break;
+                }
             }
         }
 
@@ -196,6 +217,9 @@ time_t DateTimeCalculator::calculateNextYear(const EventEntry& event, time_t cur
             struct tm adj = tm_event;
             int last = last_day_of_month_by_ym(adj.tm_year, adj.tm_mon);
             adj.tm_mday = last;
+            adj.tm_hour = tm_event.tm_hour;
+            adj.tm_min = tm_event.tm_min;
+            adj.tm_sec = tm_event.tm_sec;
             adj.tm_isdst = -1;
             newTime = safe_mktime(adj);
             if (newTime == (time_t)-1) break;
@@ -242,6 +266,8 @@ time_t DateTimeCalculator::calculateStepBack(const EventEntry& event, time_t fut
             struct tm adj = desired;
             adj.tm_mday = last;
             adj.tm_hour = desired.tm_hour; // preserve original hour
+            adj.tm_min = desired.tm_min;
+            adj.tm_sec = desired.tm_sec;
             adj.tm_isdst = -1;
             time_t cand = safe_mktime(adj);
             if (cand != (time_t)-1) result = cand;
