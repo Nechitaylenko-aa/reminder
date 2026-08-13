@@ -10,6 +10,9 @@ FetchContent_Declare(
 
 FetchContent_MakeAvailable(databased)
 
+# Build tests option
+option(BUILD_TESTS "Build tests" ON)
+
 find_package(Qt6 6.5 REQUIRED COMPONENTS Core Widgets)
 
 set(CMAKE_AUTOMOC ON)
@@ -26,18 +29,38 @@ include_directories(
         ${CMAKE_SOURCE_DIR}
 )
 
+# --- backend core sources (compiled without Qt) ---
+file(GLOB_RECURSE BACKEND_CORE_SOURCES
+    backend/sources/src/*.cpp
+    backend/db-models/*.cpp
+    backend/db-models/units/*.cpp
+)
+
+# --- original backend and gui globs (used for full app) ---
 file(GLOB_RECURSE BACKEND
     backend/*.cpp
     backend/*.h
-    )
+)
 
 file(GLOB_RECURSE GUI
     gui/*.cpp
     gui/*.h
     gui/*.ui
     gui/*.qrc
-    )
+)
 
+# If requested, build a core static library that tests can link against
+if(BUILD_TESTS)
+    add_library(reminder_core STATIC ${BACKEND_CORE_SOURCES})
+    target_include_directories(reminder_core PUBLIC
+        ${CMAKE_SOURCE_DIR}/backend/sources/include
+        ${CMAKE_SOURCE_DIR}/backend/db-models
+        ${CMAKE_SOURCE_DIR}
+    )
+    target_link_libraries(reminder_core PRIVATE database)
+endif()
+
+# --- GUI executable (unchanged) ---
 qt_add_executable(reminder
     WIN32 MACOSX_BUNDLE
     main.cpp
@@ -72,3 +95,9 @@ qt_generate_deploy_app_script(
     NO_UNSUPPORTED_PLATFORM_ERROR
 )
 install(SCRIPT ${deploy_script})
+
+# --- add tests subdirectory if enabled ---
+if(BUILD_TESTS)
+    enable_testing()
+    add_subdirectory(tests)
+endif()
