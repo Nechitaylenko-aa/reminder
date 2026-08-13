@@ -1,0 +1,424 @@
+---
+title: Reminder System Architecture
+---
+
+classDiagram
+
+    %% =========================== ENUMS ===========================
+    class ResourceType {
+        <<enum>>
+        TEXT
+        DATES
+        RT_COUNT
+    }
+
+    class EventPriority {
+        <<enum>>
+        EP_NORMAL
+        EP_IMPORTANT
+        EP_CRITICAL
+        EVEPRIOR_COUNT
+    }
+
+    class EventPeriod {
+        <<enum>>
+        EP_NONE
+        EP_MINUTE
+        EP_HOURLY
+        EP_DAILY
+        EP_WEEKLY
+        EP_MONTH
+        EP_YEAR
+        EP_COUNT
+    }
+
+    class EventType {
+        <<enum>>
+        ET_DATE
+        ET_TIME
+        ET_DATE_TIME
+        EvT_COUNT
+    }
+
+    class EventTrigger {
+        <<enum>>
+        ET_STRICTLY
+        ET_BEFORE
+        ET_AFTER
+        ET_NEVER
+        ET_COUNT
+    }
+
+    class TextEntryType {
+        <<enum>>
+        PLAIN_TEXT
+        URI_LINK
+        FILE_SYSTEM
+        SECRET
+    }
+
+    %% =========================== STRUCTS ===========================
+    class TextEntry {
+        +uint32_t id
+        +uint32_t id_parent
+        +TextEntryType type
+        +Tstring desc
+        +Tstring data
+        +bool is_removed
+        +bool showSecret
+        +operator==()
+        +operator!=()
+    }
+
+    class EventEntry {
+        +uint32_t id
+        +uint32_t id_parent
+        +EventPeriod period
+        +uint16_t period_count
+        +time_t event
+        +time_t was_shown
+        +EventType type
+        +EventTrigger trigger
+        +Tstring description
+        +EventPriority priority
+        +bool isEnabled
+        +bool is_removed
+        +operator==()
+        +operator!=()
+    }
+
+    class SNode {
+        +uint32_t id
+        +uint32_t parent_id
+        +uint32_t user_id
+        +Tstring title
+        +ResourceType res_type
+        +bool is_public
+        +bool is_editable
+        +bool is_container
+        +bool is_admin
+        +bool is_removed
+        +can_modify_data() bool
+    }
+
+    class STask {
+        +next_run
+        +task
+        +uint32_t period_ms
+        +void* owner
+        +operator>()
+    }
+
+    class CUser {
+        -Tsize m_id
+        -uint8_t m_is_admin
+        -char* m_passwd_hash
+        -char* m_login
+        +CUser()
+        +CUser(CUser src)
+        +~CUser()
+        +set_pass_hash(hash)
+        +get_pass_hash() Tstring
+        +set_id(id_contact)
+        +get_id() Tsize
+        +set_is_admin(is_admin)
+        +is_admin() bool
+        +set_login(login)
+        +get_login() Tstring
+    }
+
+    class CQueue {
+        -m_tasks
+        -m_lock
+        -CThreadPool* m_pool
+        -m_removed
+        -m_start
+        -m_shutdown
+        -m_thread
+        -m_cv
+        +CQueue(CThreadPool* pool)
+        +~CQueue()
+        +submit(owner, task, period_ms)
+        +removeTasks(owner)
+        +start()
+        +stop()
+    }
+
+    class CThreadPool {
+        -pimpl
+        +CThreadPool(threads)
+        +~CThreadPool()
+        +submit(owner, task)
+        +cancelOwner(owner)
+        +shutdown()
+    }
+
+    class CTimer {
+        <<abstract>>
+        #m_processing
+        #CQueue* m_queue
+        -uint32_t m_period
+        +~CTimer()
+        +stop()
+        +start()
+        #CTimer(CQueue* queue, uint32_t period_ms)
+        #onTick()*
+    }
+
+    %% =========================== TIMERS ===========================
+    class CEventsSyncTimer {
+        -CEventsDBModel* m_eventsDatabase
+        -CTrackedEvents* m_eventsNodes
+        -CAbstractConnection* m_connection
+        +CEventsSyncTimer(queue, period_ms, db_type)
+        +~CEventsSyncTimer()
+        #onTick()
+    }
+
+    class CTestEventsTimer {
+        -mutex* m_mutex
+        -vector~EventEntry~* m_entries
+        +CTestEventsTimer(queue, period_ms)
+        +~CTestEventsTimer()
+        +setEntries(entries, guard_mutex)
+        #onTick()
+    }
+
+    class CTextSyncTimer {
+        -CTextDBModel* m_textDatabase
+        -CTrackedTexts* m_textNodes
+        -CAbstractConnection* m_connection
+        +CTextSyncTimer(queue, period_ms, db_type)
+        +~CTextSyncTimer()
+        #onTick()
+    }
+
+    class CTreeSynchronizer {
+        -CTrackedTexts* m_trackedTexts
+        -CTrackedEvents* m_trackedEvents
+        -CAbstractConnection* m_connection
+        -CTreeDBModel* m_treeDBModel
+        +CTreeSynchronizer(queue, period_ms, db_type)
+        +~CTreeSynchronizer()
+        #onTick()
+    }
+
+    %% =========================== RESOURCES ===========================
+    class IResource {
+        <<interface>>
+        +putWidget()
+        +hideWidget()
+        +clear()
+        +prefetchData(userId)
+        +showNode(node)
+        +moveItemsToNode(idNode, items)
+        +checkPendingTasks()
+    }
+
+    class CEventResource {
+        -map~uint32_t,vector~EventEntry~~ m_publicData
+        -map~uint32_t,vector~EventEntry~~ m_userData
+        -CEventListWidget* m_gui
+        -QFrame* m_placeholder
+        -CAbstractConnection* m_connection
+        -bool m_isShown
+        -CEventsDBModel* m_db_model
+        -SNode m_parentNode
+        -CUser m_user
+        -CQueue* m_queue
+        -CTestEventsTimer* m_eventsScheduler
+        -CEventsSyncTimer* m_syncEvents
+        -mutex m_guardMutex
+        -vector~EventEntry~ m_events
+        +CEventResource(placeholder, connection, queue)
+        +~CEventResource()
+        +clear()
+        +putWidget()
+        +hideWidget()
+        +prefetchData(userId)
+        +checkPendingTasks()
+        +addItem(textItem) bool
+        +removeItems(itemsToRemove) bool
+        +updateItem(item) bool
+        +showNode(node)
+        +moveItemsToNode(idNode, items)
+    }
+
+    class CTextResource {
+        -map~uint32_t,TextEntry~ m_storage
+        -CTextWidget* m_gui
+        -QFrame* m_placeholder
+        -CAbstractConnection* m_connection
+        -bool m_isShown
+        -CTextDBModel* m_db_model
+        -SNode m_parentNode
+        -uint32_t m_idUser
+        -CTextSyncTimer* m_synchronizer
+        -map~uint32_t,vector~TextEntry~~ m_publicData
+        -map~uint32_t,vector~TextEntry~~ m_userData
+        -SNode m_currentNode
+        +CTextResource(placeholder, connection, queue)
+        +~CTextResource()
+        +clear()
+        +putWidget()
+        +hideWidget()
+        +prefetchData(userId)
+        +moveItemsToNode(idNode, items)
+        +addItem(textItem) bool
+        +removeItems(itemsToRemove) bool
+        +showNode(node)
+        +checkPendingTasks()
+        -setEntrySecret(entry)
+        -setEntryPath(entry)
+        -setEntryUrl(entry)
+        -setEntryPlain(entry)
+        -entryChanged(entry) bool
+    }
+
+    class CTreeManager {
+        -vector~SNode~ m_allNodes
+        -map~uint32_t,SNode~ m_publicStorage
+        -map~uint32_t,SNode~ m_privateStorage
+        -IResource* m_resources[RT_COUNT]
+        -IResource* m_active
+        -CMyTreeView* m_view
+        -QFrame* m_resourceContainer
+        -CAbstractConnection* m_db_connection
+        -CTreeModel* m_guiTreeModel
+        -CTreeDBModel* m_treeDBModel
+        -CUser m_user
+        -CThreadPool* m_threadPool
+        -CQueue* m_queue
+        -SNode* currentNode
+        -CTreeSynchronizer* m_treeSync
+        +CTreeManager(view, contentFrame)
+        +~CTreeManager()
+        +authorize(user)
+        +logout()
+        +nodeClicked(index)
+        +addSiblingNode(srcNode) bool
+        +addNestedNode(srcNode) bool
+        +removeNode(index)
+        +checkPendingTasks()
+    }
+
+    class DateTimeCalculator {
+        +calculateNextMinute(event, current)$
+        +calculateNextHour(event, current)$
+        +calculateNextDay(event, current)$
+        +calculateNextWeek(event, current)$
+        +calculateNextMonth(event, current)$
+        +calculateNextYear(event, current)$
+        +calculateStepBack(event, futureTime)$
+        +applyTrigger(timestamp, trigger)$
+        +isWeekend(time)$
+        +calculateNext(event, current)$
+    }
+
+    %% =========================== DB MODELS ===========================
+    class ADatabaseModel {
+        <<abstract>>
+        #CAbstractConnection* m_connection
+    }
+
+    class CEventsDBModel {
+        +CEventsDBModel(connection)
+        +~CEventsDBModel()
+        +addEvent(entry) bool
+        +updateEvent(entry) bool
+        +removeEvents(items) bool
+        +changeEventsParent(idParentNew, items) bool
+        +getEventsByNode(id_node) vector~EventEntry~
+        +prefetchUsersEvents(id_user) vector~EventEntry~
+        +finalDelete()
+    }
+
+    class CTextDBModel {
+        -CAbstractConnection* m_connection
+        +CTextDBModel(connection)
+        +~CTextDBModel()
+        +textDataByParent(parenId) vector~TextEntry~
+        +updateEntry(entry) bool
+        +removeEntry(id_entry) bool
+        +addEntry(entry) bool
+        +moveEntries(entries, newParentId) bool
+        +changeParent(idParent, items) bool
+        +finalDelete() bool
+        +prefetchData(idUser) vector~TextEntry~
+    }
+
+    class CTrackedEvents {
+        +CTrackedEvents(connection)
+        +~CTrackedEvents()
+        +trackedDatesNodes() vector~uint32_t~
+    }
+
+    class CTrackedTexts {
+        +CTrackedTexts(connection)
+        +~CTrackedTexts()
+        +trackedTextNodes() vector~uint32_t~
+    }
+
+    class CTreeDBModel {
+        -CAbstractConnection* m_connection
+        +CTreeDBModel(connection)
+        +~CTreeDBModel()
+        +get_nodes(user_id) vector~SNode~
+        +get_childrenNodes(id_parent) vector~SNode~
+        +updateNode(node) bool
+        +addNode(node) bool
+        +removeNode(idNode) bool
+        +cleanRemoved() bool
+    }
+
+    class CUserModelDB {
+        +CUserModelDB(connection)
+        +~CUserModelDB()
+        +login(login, pass) CUser
+        +get_user_by_id(id) CUser
+        +add_user(user) bool
+        +update_user(user) bool
+        +remove_user(id) bool
+        +get_users(is_admin, users) Tsize
+        +defineAdminId()
+    }
+
+    %% =========================== INHERITANCE ===========================
+    ADatabaseModel <|-- CTextDBModel
+    ADatabaseModel <|-- CTrackedTexts
+    ADatabaseModel <|-- CUserModelDB
+
+    CTimer <|-- CTestEventsTimer
+    CTimer <|-- CTreeSynchronizer
+
+    IResource <|.. CTextResource
+
+    %% =========================== COMPOSITION & AGGREGATION ===========================
+    CEventResource *-- CEventsDBModel
+    CEventResource *-- CTestEventsTimer
+    CEventResource *-- CEventsSyncTimer
+    CEventResource --> CQueue
+
+    CTextResource *-- CTextDBModel
+    CTextResource *-- CTextSyncTimer
+    CTextResource --> CQueue
+
+    CTreeManager *-- CTreeDBModel
+    CTreeManager *-- CThreadPool
+    CTreeManager *-- CQueue
+    CTreeManager *-- CTreeSynchronizer
+    CTreeManager o-- IResource
+
+    CQueue *-- CThreadPool
+
+    CEventsSyncTimer --> CEventsDBModel
+    CEventsSyncTimer --> CTrackedEvents
+
+    CTextSyncTimer --> CTextDBModel
+    CTextSyncTimer --> CTrackedTexts
+
+    CTreeSynchronizer --> CTrackedTexts
+    CTreeSynchronizer --> CTrackedEvents
+    CTreeSynchronizer --> CTreeDBModel
+
+    CTestEventsTimer --> EventEntry
