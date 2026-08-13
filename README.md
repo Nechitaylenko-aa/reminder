@@ -28,7 +28,7 @@ An event's `trigger` is triggered when an event falls on a weekend - depending o
 before the weekend, after the weekend, and strictly according to schedule.
 One-time events are deleted after they are triggered.
 
-, A new event appears `Untraceable` to edit it safely.
+> A new event appears `Untraceable` to edit it safely.
 
 ## Storage
 
@@ -36,7 +36,7 @@ The database library supports storage in MySQL/PostgreSQL, but the program uses 
 But 'Postgres` was not tested with the application.  
 The program must be compiled with the connection parameters already configured.:
 
-``c++
+```c++
 /** @brief task periods in milliseconds and the type of database server */
 struct SProgCfg
 {
