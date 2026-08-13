@@ -10,6 +10,10 @@ FetchContent_Declare(
 
 FetchContent_MakeAvailable(databased)
 
+# Options for embedding/running tests in the application
+option(BUILD_TESTS_IN_APP "Compile tests into application binary" ON)
+option(RUN_TESTS_AT_STARTUP "Run embedded tests at application startup before launching GUI" ON)
+
 find_package(Qt6 6.5 REQUIRED COMPONENTS Core Widgets)
 
 set(CMAKE_AUTOMOC ON)
@@ -45,16 +49,42 @@ qt_add_executable(reminder
         ${GUI}
         )
 
+# Include database headers
 target_include_directories(reminder PRIVATE
         ${database_SOURCE_DIR}/include
         )
 
+# Link libraries
 target_link_libraries(reminder
         PRIVATE
         Qt::Core
         Qt::Widgets
         database
         )
+
+# If requested, embed tests into application
+if(BUILD_TESTS_IN_APP)
+    include(FetchContent)
+    FetchContent_Declare(
+      catch2
+      GIT_REPOSITORY https://github.com/catchorg/Catch2.git
+      GIT_TAG v3.4.0
+    )
+    FetchContent_MakeAvailable(catch2)
+
+    # expose macro into compilation units
+    if(RUN_TESTS_AT_STARTUP)
+        target_compile_definitions(reminder PRIVATE ENABLE_TESTS_IN_APP ENABLE_TESTS_AT_STARTUP)
+    else()
+        target_compile_definitions(reminder PRIVATE ENABLE_TESTS_IN_APP)
+    endif()
+
+    target_link_libraries(reminder PRIVATE Catch2::Catch2)
+
+    # Add test sources into application binary
+    file(GLOB_RECURSE TEST_SOURCES tests/*.cpp)
+    target_sources(reminder PRIVATE ${TEST_SOURCES})
+endif()
 
 #target_compile_options(${PROJECT_NAME} PRIVATE -Wall -Wextra -Wpedantic)
 
