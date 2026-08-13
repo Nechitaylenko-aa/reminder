@@ -62,14 +62,12 @@ bool CTestEventsTimer::isDateLessEqual(time_t event, time_t now)
 {
     auto getDate = [&](time_t time)->time_t
     {
-        struct tm tm_buf{};  // свой буфер на стеке
-        struct tm* tm_now = localtime(&time);
-        if (!tm_now) return 0;
-
-        tm_buf = *tm_now;  // копируем данные
+        // Use thread-safe safeLocaltime to avoid static localtime and set tm to midnight
+        struct tm tm_buf = DateTimeCalculator::safeLocaltime(time);
         tm_buf.tm_hour = 0;
         tm_buf.tm_min = 0;
         tm_buf.tm_sec = 0;
+        tm_buf.tm_isdst = -1; // let mktime determine DST
 
         return mktime(&tm_buf);
     };
