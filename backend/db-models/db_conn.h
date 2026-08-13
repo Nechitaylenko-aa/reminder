@@ -5,7 +5,7 @@
 #ifndef REMINDER_DB_CONN_H
 #define REMINDER_DB_CONN_H
 
-#include <core-types.h>
+#include <db-types.h>
 
 
 /** @brief периоды задач в миллисекундах и тип сервера БД */

@@ -8,7 +8,7 @@
 #include <cstdint>
 #include <string>
 #include <map>
-#include <core-types.h>
+#include <db-types.h>
 
 enum  ResourceType : uint8_t
 {
