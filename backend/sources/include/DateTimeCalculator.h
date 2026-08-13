@@ -29,10 +29,10 @@ public:
 
     // Универсальный метод, выбирающий нужную стратегию
     static time_t calculateNext(const EventEntry& event, time_t current);
-
+    static struct tm safeLocaltime(time_t time);
 private:
 
-    static struct tm safeLocaltime(time_t time);
+
 };
 
 #endif // DATETIMECALCULATOR_H

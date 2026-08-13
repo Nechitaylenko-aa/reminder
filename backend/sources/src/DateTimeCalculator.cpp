@@ -136,34 +136,36 @@ time_t DateTimeCalculator::calculateNextMonth(const EventEntry& event, time_t cu
         int desired_year, desired_mon;
         add_months_to_ym(base.tm_year, base.tm_mon, months_accumulated, desired_year, desired_mon);
 
+        // compute last day first and pick use_day = min(target_day, last)
+        int last = last_day_of_month_by_ym(desired_year, desired_mon);
+        int use_day = target_day < last ? target_day : last;
+
         // build tm for desired month/day, preserve original hour/min/sec
         struct tm tm_event{};
         tm_event.tm_year = desired_year;
         tm_event.tm_mon = desired_mon;
-        tm_event.tm_mday = target_day;
-        tm_event.tm_hour = base.tm_hour; // preserve original hour
-        tm_event.tm_min = base.tm_min;
-        tm_event.tm_sec = base.tm_sec;
+        tm_event.tm_mday = use_day;
+        tm_event.tm_hour = base.tm_hour;
+        tm_event.tm_min  = base.tm_min;
+        tm_event.tm_sec  = base.tm_sec;
         tm_event.tm_isdst = -1;
+
 
         time_t cand = safe_mktime(tm_event);
         if (cand == (time_t)-1) {
-            // try set to last day of desired month
-            int last = last_day_of_month_by_ym(desired_year, desired_mon);
+            // try last day explicitly
+            tm_event.tm_mday = last;
+            tm_event.tm_isdst = -1;
+            cand = safe_mktime(tm_event);
+            if (cand == (time_t)-1) break; // give up for safety
+        }
+
+        struct tm cand_tm = safeLocaltime(cand);
+        if (cand_tm.tm_mon != desired_mon || cand_tm.tm_mday != use_day) {
             tm_event.tm_mday = last;
             tm_event.tm_isdst = -1;
             cand = safe_mktime(tm_event);
             if (cand == (time_t)-1) break;
-        } else {
-            struct tm cand_tm = safeLocaltime(cand);
-            // If day rolled into another month (e.g., Feb doesn't have 31), set to last day of desired month
-            if (cand_tm.tm_mon != desired_mon || cand_tm.tm_mday != target_day) {
-                int last = last_day_of_month_by_ym(desired_year, desired_mon);
-                tm_event.tm_mday = last;
-                tm_event.tm_isdst = -1;
-                cand = safe_mktime(tm_event);
-                if (cand == (time_t)-1) break;
-            }
         }
 
         result_ts = cand;
