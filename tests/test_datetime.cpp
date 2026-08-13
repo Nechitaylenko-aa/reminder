@@ -32,6 +32,18 @@ static time_t make_utc(int year, int month, int day, int hour = 0, int min = 0, 
     return mktime(&t);
 }
 
+// Helper to get UTC struct tm in a portable way
+static struct tm get_tm_utc(time_t ts)
+{
+    struct tm out{};
+#ifdef _WIN32
+    gmtime_s(&out, &ts);
+#else
+    gmtime_r(&ts, &out);
+#endif
+    return out;
+}
+
 // Простая проверка для минутных повторений
 TEST_CASE("calculateNextMinute advances by period_count minutes", "[DateTimeCalculator]") {
     EventEntry ev{};
@@ -106,15 +118,71 @@ TEST_CASE("applyTrigger moves weekend to nearest workday before or after", "[Dat
     time_t saturday = make_utc(2021, 10, 9, 10, 0, 0);
     // ET_BEFORE should move to Friday (2021-10-08)
     time_t before = DateTimeCalculator::applyTrigger(saturday, ET_BEFORE);
-    struct tm tb = DateTimeCalculator::safeLocaltime(before);
-    REQUIRE(tb.tm_wday == 5); // Friday
+    struct tm tb = get_tm_utc(before);
+    REQUIRE(tb.tm_wday == 5); // Friday (tm_wday: 0=Sun,1=Mon,...,5=Fri)
 
     // ET_AFTER should move to Monday (2021-10-11)
     time_t after = DateTimeCalculator::applyTrigger(saturday, ET_AFTER);
-    struct tm ta = DateTimeCalculator::safeLocaltime(after);
+    struct tm ta = get_tm_utc(after);
     REQUIRE(ta.tm_wday == 1); // Monday
 
     // ET_STRICTLY on weekend should return same timestamp
     time_t strict = DateTimeCalculator::applyTrigger(saturday, ET_STRICTLY);
     REQUIRE(strict == saturday);
+
+    // 2021-10-10 is Sunday
+    time_t sunday = make_utc(2021, 10, 10, 9, 0, 0);
+    time_t before_sun = DateTimeCalculator::applyTrigger(sunday, ET_BEFORE);
+    struct tm tbs = get_tm_utc(before_sun);
+    REQUIRE(tbs.tm_wday == 5); // Friday
+
+    time_t after_sun = DateTimeCalculator::applyTrigger(sunday, ET_AFTER);
+    struct tm tas = get_tm_utc(after_sun);
+    REQUIRE(tas.tm_wday == 1); // Monday
+}
+
+TEST_CASE("calculateNextMonth end-of-month behavior (non-leap and leap)", "[DateTimeCalculator]") {
+    // Non-leap year: Jan 31, 2021 -> Feb 28, 2021
+    time_t ev_jan31_2021 = make_utc(2021, 1, 31, 10, 0, 0);
+    EventEntry ev1{};
+    ev1.event = ev_jan31_2021;
+    ev1.period = EP_MONTH;
+    ev1.period_count = 1;
+
+    time_t cur_feb1_2021 = make_utc(2021, 2, 1, 0, 0, 0);
+    time_t next_feb = DateTimeCalculator::calculateNextMonth(ev1, cur_feb1_2021);
+    struct tm tn = get_tm_utc(next_feb);
+    REQUIRE(tn.tm_mon == 1); // February
+    REQUIRE(tn.tm_mday == 28);
+    REQUIRE(tn.tm_hour == 10);
+
+    // Leap year: Jan 31, 2020 -> Feb 29, 2020
+    time_t ev_jan31_2020 = make_utc(2020, 1, 31, 8, 30, 0);
+    EventEntry ev2{};
+    ev2.event = ev_jan31_2020;
+    ev2.period = EP_MONTH;
+    ev2.period_count = 1;
+
+    time_t cur_feb1_2020 = make_utc(2020, 2, 1, 0, 0, 0);
+    time_t next_feb_2020 = DateTimeCalculator::calculateNextMonth(ev2, cur_feb1_2020);
+    struct tm tn2 = get_tm_utc(next_feb_2020);
+    REQUIRE(tn2.tm_mon == 1); // February
+    REQUIRE(tn2.tm_mday == 29);
+    REQUIRE(tn2.tm_hour == 8);
+}
+
+TEST_CASE("calculateStepBack returns expected previous month end for end-of-month events", "[DateTimeCalculator]") {
+    // Event on Jan 31, stepping back from March 31 should return Feb 28 (non-leap year)
+    time_t ev_jan31 = make_utc(2021, 1, 31, 10, 0, 0);
+    EventEntry ev{};
+    ev.event = ev_jan31;
+    ev.period = EP_MONTH;
+    ev.period_count = 1;
+
+    time_t future_mar31 = make_utc(2021, 3, 31, 10, 0, 0);
+    time_t stepped = DateTimeCalculator::calculateStepBack(ev, future_mar31);
+    struct tm ts = get_tm_utc(stepped);
+    REQUIRE(ts.tm_mon == 1); // February
+    REQUIRE(ts.tm_mday == 28);
+    REQUIRE(ts.tm_hour == 10);
 }
